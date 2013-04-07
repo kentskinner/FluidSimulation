@@ -1,185 +1,74 @@
 <html>
 <head>
 <style>
-body { background-color: #000 }
+body { background-color: #000; color: #888; padding: 20px; }
 canvas { -webkit-filter: blur(3px); }
-div { border: 1px solid #333; margin: 20px; float: left;}
+div { border: 1px solid #333; float: left;}
+#fps { clear: both; display: block; padding-top: 5px; }
 </style>
 </head>
 <body>
-<div>
-<canvas id="tutorial" width="500" height="500"></canvas>
-</div>
+	<div>
+		<canvas id="tutorial" width="500" height="500"></canvas>
+	</div>
+	<span id="fps"></span>
+	<p>
+		Based on C-code written by Jos Stam, described in the paper "Real-Time Fluid Dynamics for Games".
+		<a href="http://www.dgp.toronto.edu/people/stam/reality/Research/pdf/GDC03.pdf">
+			http://www.dgp.toronto.edu/people/stam/reality/Research/pdf/GDC03.pdf
+		</a>
+	</p>	
+<script src="solver.js"></script>
 <script>
 var canvas = document.getElementById('tutorial');
 var ctx = canvas.getContext('2d');
 
-function clone(x) {
-	var c = [];
-	for(var i=0; i < x.length; i++)
-		c[i] = x[i].slice(0);
-	return c;
-}
+var fluidSim = new FluidSimulation({ N: 80, visc: 0, dt: 0.1, diff: 0 }); 
 
-function diffuse(N, b, x, x0, diff, dt) {
-	var a = dt * diff * N * N;
-	for(var k = 0; k < 20; k++) {
-		for(var i=1; i <= N; i++) {
-			for(var j=1; j <= N; j++) {
-				x[i][j] = (x0[i][j] + a * (x[i-1][j]+x[i+1][j]+x[i][j-1]+x[i][j+1]))/(1+4*a);
-			}
-		}
-		set_bnd(N, b, x);
-	}
-}
+var startTime = new Date();
+var frame = 0;
 
-function test_diffuse() {
-	var x = [ [ 1, 1, 0, 0], [ 1, 1, 0, 0], [ 0, 0, 0, 0], [0, 0, 0, 0] ];
-	for(var i=0; i < 100; i++) {
-		var x0 = clone(x);
-		diffuse(2, 0, x, x0, 0.1, 0.25);
-	}
-	return x;
-}
-
-
-function set_bnd(N, b, x) {
-	for(var i=1;i <= N; i++) {
-		x[0][i] 	= b == 1 ? -x[1][i] : x[1][i];
-		x[N+1][i] 	= b == 1 ? -x[N][i] : x[N][i];
-		x[i][0] 	= b == 2 ? -x[i][1] : x[i][1];
-		x[i][N+1] 	= b == 2 ? -x[i][N] : x[i][N];
-	}
-	x[0][0] 	   = 0.5 * (x[1][0] 	 + x[0][1]);
-	x[0][N+1]   = 0.5 * (x[1][N+1] + x[0][N]);
-	x[N+1][0]   = 0.5 * (x[N][0] 	 + x[N+1][1]);
-	x[N+1][N+1] = 0.5 * (x[N][N+1] + x[N+1][N]);
-}
-
-function advect(N, b, d, d0, u, v, dt) {
-	var dt0 = dt * N;
-	for(var i=1; i <= N; i++) {
-		for(var j=1; j <= N; j++) {
-			var x = i - dt0 * u[i][j];
-			var y = j - dt0 * v[i][j];
-			if (x<0.5) x = 0.5;
-			if (x>N+0.5) x=N +0.5;
-			var i0 = Math.floor(x);
-			var i1 = i0 + 1;
-			if (y<0.5) y = 0.5;
-			if (y>N+0.5) y=N +0.5;
-			var j0 = Math.floor(y);
-			var j1 = j0 + 1;
-			var s1 = x-i0; var s0 = 1-s1; var t1=y-j0;var t0=1-t1;
-			d[i][j]=s0*(t0*d0[i0][j0]+t1*d0[i0][j1])+
-					s1*(t0*d0[i1][j0]+t1*d0[i1][j1]);
-		}
-	}
-	set_bnd(N,b,d);
-}
-
-function add_source(N,x,x0,dt) {
-	//var sx = 1 + Math.floor(N/2);
-	//var sy = 1 + Math.floor(N/3);
-	//x[sx][sy] += 5.0;
-	//x[1][20] += 5.0;
-	//x[sx-1][sy] += 1.0;
-	//x[sx+1][sy] += 1.0;
-	//x[sx][sy-1] += 1.0;
-	//x[sx][sy+1] += 1.0;
-}
-
-function dens_step(N,x,x0,u,v,diff,dt) {
-	//add_source(N,x,x0,dt);
-	x[1][20] += dt * 50.0;
-	x0 = clone(x); diffuse(N,0,x,x0,diff,dt);
-	x0 = clone(x); advect(N,0,x,x0,u,v,dt);
-}
-
-function vel_step ( N, u, v, u0, v0, visc, dt )
-{	
-	u[1][20] += dt * 30.0;
-	v[1][20] += dt * 1.0;
-	//add_source ( N, u, u0, dt ); add_source ( N, v, v0, dt );
-	var u0 = clone(u); diffuse ( N, 1, u, u0, visc, dt );
-	var v0 = clone(v); diffuse ( N, 2, v, v0, visc, dt );
-	project ( N, u, v, u0, v0 );
-	u0 = clone(u); v0 = clone(v);
-	advect ( N, 1, u, u0, u0, v0, dt ); advect ( N, 2, v, v0, u0, v0, dt );
-	project ( N, u, v, u0, v0 );
-}
-
-function project(N, u, v, p, div) {
-	var h = 1.0/N;
-	for ( i=1 ; i<=N ; i++ ) {
-		for ( j=1 ; j<=N ; j++ ) {
-			div[i][j] = -0.5*h*(u[i+1][j]-u[i-1][j]+
-							v[i][j+1]-v[i][j-1]);
-			p[i][j] = 0;
-		}
-	}
-	set_bnd ( N, 0, div ); set_bnd ( N, 0, p );
-	for ( k=0 ; k<20 ; k++ ) {
-		for ( i=1 ; i<=N ; i++ ) {
-			for ( j=1 ; j<=N ; j++ ) {
-				p[i][j] = (div[i][j]+p[i-1][j]+p[i+1][j]+
-				p[i][j-1]+p[i][j+1])/4;
-			}
-		}
-		set_bnd ( N, 0, p );
-	}
-	for ( i=1 ; i<=N ; i++ ) {
-		for ( j=1 ; j<=N ; j++ ) {
-			u[i][j] -= 0.5*(p[i+1][j]-p[i-1][j])/h;
-			v[i][j] -= 0.5*(p[i][j+1]-p[i][j-1])/h;
-		}
-	}
-	set_bnd ( N, 1, u ); set_bnd ( N, 2, v );
-}
-
-var N = 80;
-var diff = 0.0;
-var dt = 0.1
-var visc = 0.0;
-var force = 5.0;
-var source = 100.0;
-
-var x = [], u = [], v = [];
-for(var i=0; i < N + 2; i++) {
-	x[i] = []; u[i] = []; v[i] = [];
-	for(var j=0; j < N + 2; j++) {
-		x[i][j] = 0.0;
-		u[i][j] = 0.0;
-		v[i][j] = 0.0;
-	}
-}
-var u_prev = []; var v_prev = [];
+var cellSize = 500 / fluidSim.config.N;
 
 function draw() {
-	var x0 = clone(x);
-	vel_step(N, u, v, u_prev, v_prev, visc, dt);
-	dens_step(N, x, x0, u, v, diff, dt);	
+	fluidSim.step();
 	
-	var cellSize = 500 / N;
-
-	//ctx.fillStyle = "rgb(0,0,0)";
-	//ctx.fillRect(cellSize,cellSize,N * cellSize, N * cellSize);
-	for(var i=1; i <= N; i++) {
-		for(var j=1; j <= N; j++) {			
-			var alpha = Math.round(x[i][j] * 1000) / 1000.0;
-			//if (alpha > 0) {
-				if (alpha > 1.0) alpha = 1.0;
-				var a = Math.floor(alpha * 255);
-				ctx.fillStyle = "rgb(" + a + "," + a + "," + a + ")";
-				var px = (i-1) * cellSize;
-				var py = (j-1) * cellSize;
+	ctx.fillStyle = "rgb(0,0,0)";
+	ctx.fillRect(cellSize,cellSize,N * cellSize, N * cellSize);
+	var px = 0;
+	var N = fluidSim.config.N;
+	for(var i=1; i <= N; i++) {		
+		var py = 0;
+		for(var j=1; j <= N; j++) {	
+			var a = Math.min(Math.floor(fluidSim.x[i][j] * 255), 255);
+			if (a > 0) {
+				ctx.fillStyle = "rgb(" + a + "," + a + "," + a + ")";				
 				ctx.fillRect (px, py, cellSize + 1, cellSize + 1);			
-			//}
+			}
+			py += cellSize;
 		}
+		px += cellSize;
 	}
+	ctx.fillStyle = "rgb(255,0,0)";
+	var px = (x1-1) * cellSize;
+	var py = (y1-1) * cellSize;
+	var w = (x2-x1+1)*cellSize;
+	var h = (y2-y1+1)*cellSize;
+	ctx.fillRect(px, py, w, h);
+	
+	frame++;
+	
+	setTimeout(draw,0);
 }
 
-setInterval(draw,30);
+function showFps() {
+	var fps = Math.round(frame / (new Date() - startTime) * 10000.0) / 10.0;
+	document.getElementById('fps').innerHTML = fps;
+	console.log(fps);
+}
+setInterval(showFps, 1000);
+
+draw();
 </script>
 </body>
 </html>
